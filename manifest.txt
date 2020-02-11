@@ -1,5 +1,8 @@
+# Loading lora test
 thread.py
 sx127x.py
 lora_test.py
+ssd1306.py
+ssd1306_i2c.py
 main.py
-
+# end of lora test load
