@@ -165,6 +165,7 @@ class LoRaHandler(SX127x_driver):
                 self.transmit_packet(packet)
 
     def close(self):
+        super().close()
         if self._spi:
             self._spi.deinit()
             self._spi = None

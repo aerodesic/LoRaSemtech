@@ -224,9 +224,9 @@ class SX127x_driver:
 
     # If we cannot do a block write, write byte at a time
     # Can be overwritten by base class to achieve better throughput
-    def write_buffer(self, address, buffer):
+    def write_buffer(self, address, buffer, size):
         # print("write_buffer: '%s'" % buffer.decode())
-        for i in range(len(buffer)):
+        for i in range(size):
             self.write_register(address, buffer[i])
 
     # If user does not define a block write, do it the hard way
@@ -404,12 +404,7 @@ class SX127x_driver:
 
         # print("_write_packet: writing %d: '%s'" % (size, buffer.decode()))
 
-        if size == len(buffer):
-            self.write_buffer(_SX127x_REG_FIFO, buffer)
-        else:
-            self.write_buffer(_SX127x_REG_FIFO, buffer[0:size])
-#        for i in range(size):
-#            self.write_register(_SX127x_REG_FIFO, buffer[i])
+        self.write_buffer(_SX127x_REG_FIFO, buffer, size)
 
         # print("_write_packet: writing current %d + size %d = %d" % (current, size, current+size))
         self.write_register(_SX127x_REG_PAYLOAD_LENGTH, current + size)
@@ -428,7 +423,7 @@ class SX127x_driver:
     def _garbage_collect(self):
         gc.collect()
 
-    def __exit__(self):
+    def close(self):
         # Disbable interrupts 
         self.attach_interrupt(None)
         self.write_register(_SX127x_REG_IRQ_FLAGS_MASK, 0xFF)
