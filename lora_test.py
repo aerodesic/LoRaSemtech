@@ -24,7 +24,7 @@ class LoRaHandler(SX127x_driver):
 
     def __init__(self):
         SX127x_driver.__init__(self, bandwidth=50e3, spreading_factor=10)
-        SX127x_driver.__init__(self)
+        SX127x_driver.__init__(self, tx_power=17)
         # thread.__init__(self, name = "LoRaWorker")
 
         self._loralock = _thread.allocate_lock()

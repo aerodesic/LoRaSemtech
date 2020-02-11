@@ -283,12 +283,14 @@ class SX127x_driver:
         self.attach_interrupt(self._txhandle_interrupt)
         self.write_register(_SX127x_REG_DIO_MAPPING_1, 0b01000000)
 
-    def set_tx_power(self, level, mode="RFO"):
+    # Level in dBm
+    def set_tx_power(self, level, mode="PA"):
         if mode == "PA":
             # PA Boost mode
-            self.write_register(_SX127x_REG_PA_CONFIG, PA_BOOST | (min(max(level, 2), 17)) - 2)
+            level = min(max(int(round(level) - 2), 0), 15)
+            self.write_register(_SX127x_REG_PA_CONFIG, _SX127x_PA_BOOST | level)
         else:
-            self.write_register(_SX127x_REG_PA_CONFIG, 0x70 | (min(max(level, 0), 14)))
+            self.write_register(_SX127x_REG_PA_CONFIG, 0x70 | (min(max(level, 0), 15)))
 
     def set_frequency(self, frequency):
         if frequency in _FREQUENCIES:
