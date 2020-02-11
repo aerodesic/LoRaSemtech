@@ -153,13 +153,14 @@ class queue():
 # Simple thread class
 
 class thread():
-    def __init__(self, name="sx127x", stack=0, ident=None):
+    def __init__(self, name="sx127x", stack=0, ident=None, run=None):
         self._stack = stack
         self._name = name
         self._runninglock = _thread.allocate_lock()
         self._rc = None
         self.running = False
         self._ident = ident
+        self._userrun = run
 
     # Return the name of the thread
     def name(self):
@@ -184,7 +185,10 @@ class thread():
         # Capture our ident
         self._ident = _thread.get_ident()
         # Run the user's code
-        self._rc = self.run()
+        if self._userrun:
+            self._rc = self._userrun(self)
+        else:
+            self._rc = self.run()
         # Allow 'wait' to finish
         self._runninglock.release()
 
