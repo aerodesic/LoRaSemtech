@@ -4,8 +4,9 @@
 # Designed to be inherited by worker class to perform the actual I/O
 #
 import gc
-import _thread
-from thread import recursive_lock
+from ulock import *
+from uqueue import *
+from uthread import thread
 
 try:
     _UNUSED_=const(1)
@@ -137,20 +138,22 @@ _FREQUENCIES = {
 #  Optional:
 #    write_buffer(<register>, <bytearray of values>, size)   Optional: write a packet
 #    read_buffer(<register>, <length>                  Optional: read a packet
+#    set_power(state)                                  Set power mode (override and extend is suggested)
 #
 
 class SX127x_driver:
 
     def __init__(self,
-                 frequency = 915,
-                 tx_power = 2,
-                 bandwidth = 125e3,
-                 spreading_factor = 8,
-                 coding_rate = 5,
-                 preamble_length = 8,
-                 implicit_header = False,
-                 sync_word = 0x12,
-                 enable_crc = False):
+                 frequency = 915,             # Frequency block of operation (default USA)
+                 tx_power = 2,                # Default to lowest power
+                 bandwidth = 125e3,           # Default bandwidth 125kHz
+                 spreading_factor = 8,        # Default spreading factor
+                 coding_rate = 5,             # Default coding rate
+                 preamble_length = 8,         # Default preamble length
+                 implicit_header = False,     # No default implicit header
+                 sync_word = 0x12,            # Default sync word
+                 hop_period = 0,              # FHSS hopping period default disabled
+                 enable_crc = False):         # No default crc
         self._frequency = frequency
         self._tx_power = tx_power
         self._bandwidth = bandwidth
@@ -159,16 +162,15 @@ class SX127x_driver:
         self._preamble_length = preamble_length
         self._implicit_header = implicit_header
         self._sync_word = sync_word
+        self._hop_period = hop_period
         self._enable_crc = enable_crc
 
         self._current_implicit_header = None
 
-        self._lock = recursive_lock()
+        self._lock = rlock()
 
 
     def init(self, wanted_version=0x12, start=True):
-        # help(self)
-
         self.reset()
 
         # Read version
@@ -202,6 +204,7 @@ class SX127x_driver:
         self.set_preamble_length(self._preamble_length)
         self.set_sync_word(self._sync_word)
         self.set_enable_crc(self._enable_crc)
+        self.set_hop_period(self._hop_period)
 
         # Set 'low data rate' flag if long symbol time
         if 1000 / (self._bandwidth / 2**self._spreading_factor) > 16:
@@ -247,6 +250,13 @@ class SX127x_driver:
     def attach_interrupt(self, callback):
         raise Exception("enable_interrupt not defined.")
 
+    def set_power(self, power=True):
+        if power:
+            # Bring things up
+            self._set_receive_mode()
+        else:
+            self._set_sleep_mode()
+
 #    def get_irq_flags(self):
 #        flags = self.read_register(_SX127x_REG_IRQ_FLAGS)
 #        self.write_register(_SX127x_REG_IRQ_FLAGS, flags)
@@ -272,15 +282,15 @@ class SX127x_driver:
 
     def _set_receive_mode(self):
         # print("receive mode")
+        self.attach_interrupt(self._rxhandle_interrupt)
         # self.write_register(_SX127x_REG_OP_MODE, _SX127x_MODE_LONG_RANGE | _SX127x_MODE_RX_SINGLE)
         self.write_register(_SX127x_REG_OP_MODE, _SX127x_MODE_LONG_RANGE | _SX127x_MODE_RX_CONTINUOUS)
-        self.attach_interrupt(self._rxhandle_interrupt)
         self.write_register(_SX127x_REG_DIO_MAPPING_1, 0b00000000)
 
     def _set_transmit_mode(self):
         # print("transmit mode")
-        self.write_register(_SX127x_REG_OP_MODE, _SX127x_MODE_LONG_RANGE | _SX127x_MODE_TX)
         self.attach_interrupt(self._txhandle_interrupt)
+        self.write_register(_SX127x_REG_OP_MODE, _SX127x_MODE_LONG_RANGE | _SX127x_MODE_TX)
         self.write_register(_SX127x_REG_DIO_MAPPING_1, 0b01000000)
 
     # Level in dBm
@@ -338,6 +348,9 @@ class SX127x_driver:
             config &= ~0x04
         self.write_register(_SX127x_REG_MODEM_CONFIG_2, config)
 
+    def set_hop_period(self, hop_period):
+        self.write_register(_SX127x_REG_HOP_PERIOD, hop_period)
+
     def set_sync_word(self, sync):
         self.write_register(_SX127x_REG_SYNC_WORD, sync)
 
@@ -361,13 +374,11 @@ class SX127x_driver:
     # Receive interrupt comes here
     def _rxhandle_interrupt(self, event):
         # print("_rxhandle_interrupt fired on %s" % str(event))
-        with self._lock:
-            # print("Interrupt locked")
-            flags = self.read_register(_SX127x_REG_IRQ_FLAGS)
+        flags = self.read_register(_SX127x_REG_IRQ_FLAGS)
+        self.write_register(_SX127x_REG_IRQ_FLAGS, flags)
 
-            if flags & _SX127x_IRQ_RX_DONE:
-                self.write_register(_SX127x_REG_IRQ_FLAGS, _SX127x_IRQ_RX_DONE)
-
+        if flags & _SX127x_IRQ_RX_DONE:
+            with self._lock:
                 self.write_register(_SX127x_REG_FIFO_PTR, self.read_register(_SX127x_REG_RX_FIFO_CURRENT))
                 if self._implicit_header:
                     length = self.read_register(_SX127x_REG_PAYLOAD_LENGTH)
@@ -378,21 +389,26 @@ class SX127x_driver:
                 crc_ok = (flags & _SX127x_IRQ_PAYLOAD_CRC_ERROR) == 0
 
                 self.onReceive(packet, crc_ok, self.get_packet_rssi())
-        self._garbage_collect()
-
+        else:
+            print("_rxhandle_interrupt: not for us %02x" % flags)
+  
     def _txhandle_interrupt(self, event):
-        # print("_txhandle_interrupt fired on %s" % str(event))
-        with self._lock:
-            flags = self.read_register(_SX127x_REG_IRQ_FLAGS)
-            if flags & _SX127x_IRQ_TX_DONE:
-                # Say processed
-                self.write_register(_SX127x_REG_IRQ_FLAGS, _SX127x_IRQ_TX_DONE)
+        flags = self.read_register(_SX127x_REG_IRQ_FLAGS)
+        self.write_register(_SX127x_REG_IRQ_FLAGS, flags)
+
+        # print("_txhandle_interrupt fired on %s %02x" % (str(event), flags))
+        if flags & _SX127x_IRQ_TX_DONE:
+            # Say processed
+
+            # Transmit interrupt
+            with self._lock:
                 packet = self.onTransmit()
                 if packet:
                     self.transmit_packet(packet)
                 else:
                     self._set_receive_mode()
-        self._garbage_collect()
+        else:
+            print("_txhandle_interrupt: not for us %02x" % flags)
 
     def _start_packet(self, implicit_header = False):
         self._set_standby_mode()

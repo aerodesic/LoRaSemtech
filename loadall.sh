@@ -13,11 +13,13 @@ else
 fi
 
 while read -r line; do
-  file=`echo $line`
-  if [[ "${file:0:1}" != "#" ]]; then
-    if ! ampy -p $PORT put $file $file >/dev/null 2>&1; then
+  files=`echo $line`
+  if [[ "${files:0:1}" != "#" ]]; then
+    src=`echo $files | cut -d ' ' -f 1`
+    dest=`echo $files | cut -d ' ' -f 2`
+    if ! ampy -p $PORT put $src $dest >/dev/null 2>&1; then
       # An error, so create sub directories as needed
-      DIRS=`dirname $file | tr '/' ' '`
+      DIRS=`dirname $dest | tr '/' ' '`
       dir=''
       if [ "$DIRS" != "." ]; then
         for d in $DIRS; do
@@ -33,8 +35,8 @@ while read -r line; do
         done
       fi
       # Do it again (report any errors)
-      ampy -p $PORT put $file $file
+      ampy -p $PORT put $src $dest
     fi
-    echo Downloaded $file
+    echo Downloaded $src as $dest
   fi
 done <$MANIFEST

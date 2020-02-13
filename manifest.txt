@@ -1,8 +1,17 @@
 # Loading lora test
-thread.py
+uthread.py
+ulock.py
+uqueue.py
+usemaphore.py
 sx127x.py
 lora_test.py
 ssd1306.py
 ssd1306_i2c.py
-main.py
+webmain.py main.py
+webserver.py
+configdata.py
+lorawebserver.py
+html/index.html
+html/not_found.html
+html/config.html
 # end of lora test load
