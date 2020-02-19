@@ -3,7 +3,7 @@ import _thread
 from ulock import lock
 
 class thread():
-    def __init__(self, name="sx127x", stack=0, run=None):
+    def __init__(self, name="sx127x", stack=None, run=None):
         self._stack = stack
         self._name = name
         self._runninglock = lock()

@@ -45,13 +45,13 @@ display = Display()
 display.show_text_wrap("Starting...")
 
 from lora_test import *
-# lora=LoRaHandler(packet_delay=0.4)
-lora=LoRaHandler(display=lambda text, line=0, clear=True : display.show_text_wrap(text, start_line=line, clear_first=clear))
+from loradomains import US902_928 as domain
+lora=LoRaHandler(domain, channel=('up', 64), display=lambda text, line=0, clear=False : display.show_text_wrap(text, start_line=line, clear_first=clear))
 lora.init()
 
 # Start web server
 from lorawebserver import *
-webserver = LoRaWebserver(config=CONFIG_DATA, display=lambda text, line=4, clear=True : display.show_text_wrap(text, start_line=line, clear_first=clear))
+webserver = LoRaWebserver(config=CONFIG_DATA, display=lambda text, line=4, clear=False : display.show_text_wrap(text, start_line=line, clear_first=clear))
 webserver.start()
 
 from time import sleep
@@ -60,4 +60,6 @@ from time import sleep
 while True:
     sleep(30)
     gc.collect()
+    display.show_text_wrap("Mem: %d" % gc.mem_free(), start_line=6, clear_first=False)
+    display.show_text_wrap("Tx %d Rx %d" % (lora._tx_interrupts, lora._rx_interrupts), start_line=7, clear_first=False)
 

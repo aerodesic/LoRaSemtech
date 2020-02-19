@@ -1,8 +1,14 @@
 #!/bin/bash
-PORT=/dev/ttyUSB0
+if [ -z "$PORT" ]; then
+  PORT=/dev/ttyUSB0
+fi
+if [ ! -e "$PORT" ]; then
+  echo $PORT not found
+  exit 1
+fi
 if [ "$1" = "-c" ]; then
   echo Removing all files from device
-  ampy -p /dev/ttyUSB0 rmdir / >/dev/null 2>&1
+  ampy -p $PORT rmdir / >/dev/null 2>&1
   shift
 fi
 

@@ -11,13 +11,13 @@ class ConfigData():
         if read != None:
             try:
                 self._data = json.loads(read())
-                if version != None and self._data['.version'] != version:
+                if version != None and self._data['%version'] != version:
                     raise Exception('data version changed')
 
             except Exception as e:
                 sys.print_exception(e)
                 self._data = data
-                self._data[".version"] = version
+                self._data["%version"] = version
                 self.flush(force=True)
         else:
             self._data = {}
@@ -61,7 +61,7 @@ class ConfigData():
         # print("list: sub_vars %s this_level %s" % (sub_vars, this_level))
         for var in this_level:
             # Hide vars that start with '.' unless directed otherwise
-            if not excludehidden or var[0] != '.':
+            if not excludehidden or var[0] != '%':
                 value = data[var]
                 if isinstance(value, dict):
                     # Recurse for remainder of subvars
@@ -80,12 +80,14 @@ class ConfigData():
             data[lastpart] = value
             self._dirty = True
     
-    def get(self, name=None):
+    def get(self, name=None, default=''):
         if name != None:
             data, lastpart = self._lookup(name)
-            return data[lastpart]
+            value = data[lastpart]
         else:
-            return self._data
+            value = self._data
+
+        return default if value == '' else value
     
     def delete(self, name):
         data, lastpart = self._lookup(name)

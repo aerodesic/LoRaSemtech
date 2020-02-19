@@ -34,8 +34,6 @@ class queue():
             return self._queue[-1] if len(self._queue) != 0 else None
 
     def get(self, wait=1):
-        item = None
-        found = False
         self._lock.acquire()
 
         if wait:
@@ -46,9 +44,11 @@ class queue():
                 self._lock.acquire()
 
         if len(self._queue) != 0:
-            item  = self._queue[0]
-            del self._queue[0]
+            item = self._queue.pop(0)
             found = True
+        else:
+            item = None
+            found = False
 
         self._lock.release()
 

@@ -1,14 +1,13 @@
 #
-# LoRa message driver.
+# LoRa Com driver
 #
 
 from time import sleep
 from ulock import *
 from uqueue import *
-from uthread import *
-from sx127x import *
+from sx127x import SX127x_driver
 from machine import SPI, Pin
-from urandom import randrange
+
 
 _SX127x_DIO0  = const(26)   # DIO0 interrupt pin
 _SX127x_DIO1  = const(35)   # DIO1 interrupt pin
@@ -19,18 +18,15 @@ _SX127x_MISO  = const(19)
 _SX127x_SS    = const(18)
 _SX127x_RESET = const(14)
 _SX127x_WANTED_VERSION = const(0x12)
-_BUTTON_PIN   = const(0)
-_LED_PIN      = const(25)
 
 class LoRaHandler(SX127x_driver):
 
-    def __init__(self, domain, display = None, **kwargs):
+    def __init__(self, domain, **kwargs):
         SX127x_driver.__init__(self, domain, **kwargs)
 
         self._loralock = rlock()
         self._transmit_queue = queue()
         self._receive_queue = queue()
-        self._display = display if display else lambda text,line=0,clear=False : None
 
     def init(self):
         self._spi = SPI(baudrate=10000000, polarity=0, phase=0, bits=8, firstbit = SPI.MSB,
@@ -41,70 +37,14 @@ class LoRaHandler(SX127x_driver):
         self._ss = Pin(_SX127x_SS, Pin.OUT)
         self._reset = Pin(_SX127x_RESET, Pin.OUT)
         self._dio_table = [ Pin(_SX127x_DIO0, Pin.IN), Pin(_SX127x_DIO1, Pin.IN), Pin(_SX127x_DIO2, Pin.IN) ]
-        self._button = Pin(_BUTTON_PIN, Pin.IN)
-        self._button_flag = lock(True)
         self._ping_count = 0
-        self._led_pin = Pin(_LED_PIN, Pin.OUT)
         self._power = None # not True nor False
 
         # Perform base class init
         super().init(_SX127x_WANTED_VERSION)
 
-        self._display("Ready")
-
-
-        # Start the worker thread
-        self._worker_thread = thread(run=self._worker_run, name="worker_thread", stack=8192)
-        self._worker_thread.start()
-        
-        self._button_thread = thread(run=self._button_run, name="button_thread", stack=8192)
-        self._button_thread.start()
-
-        # Set power state for button and control
+        # Set power state
         self.set_power()
-
-    # Interrupt comes here
-    def _button_pressed(self, event=None):
-        try:
-            self._button_flag.release()
-        except:
-            pass
-
-    def _button_run(self, t):
-        while self._button_flag.acquire() and t.running:
-            # print("Button pressed")
-            self._ping_count += 1
-            self._display("ping %d" % (self._ping_count))
-            # Launch a ping message
-            self.send_packet(b'ping %d' % self._ping_count)
-
-    def _worker_run(self, t):
-        # print("Worker running")
-        while t.running:
-            packet = self.receive_packet()
-            if packet:
-                rssi = packet['rssi']
-                data = packet['data'].decode()
-                toaddr = data[0] << 8 + data[1]
-                randbyte = data[2]
-                fromaddr = data[3] << 8 + data[4]
-                data = data[5:]
-
-                # print("Received: rssi %d to %04x from %04x '%s'" % (rssi, fromaddr, toaddr, data[5:]))
-                gc.collect()
-                self._led_pin.on()
-                sleep(0.1)
-                self._led_pin.off()
-                if data[0:5] == b'ping ':
-                    # Send answer
-                    header = bytearray(((toaddr >> 8) % 256, toaddr % 256, randrange(0, 256), (fromaddr >> 8) % 256, fromaddr % 256))
-                    self.send_packet(header + bytearray('reply %s (%d)' % (data[5:], rssi)))
-                else:
-                    self._display("(%d) %s" % (rssi, data), line=2, clear=False)
-                del(packet)
-
-        # print("Worker exit")
-        return 0
 
     # Reset device
     def reset(self):
@@ -151,7 +91,7 @@ class LoRaHandler(SX127x_driver):
         self._dio_table[dio].irq(handler=callback, trigger=Pin.IRQ_RISING if callback else 0)
 
     def onReceive(self, packet, crc_ok, rssi):
-        # print("onReceive: crc_ok %s packet %s rssi %d" % (crc_ok, packet, rssi))
+        print("onReceive: crc_ok %s packet %s rssi %d" % (crc_ok, packet, rssi))
         if crc_ok:
             # Check addresses etc
             self._receive_queue.put({'rssi': rssi, 'data': packet })
@@ -190,22 +130,6 @@ class LoRaHandler(SX127x_driver):
 
         self.set_power(False)
 
-        if self._worker_thread:
-            self._worker_thread.stop()
-            self._receive_queue.put(None)
-            rc = self._worker_thread.wait()
-            print("Exit %s rc %d" % (self._worker_thread.name(), rc))
-            self._worker_thread = None
-
-        if self._button_thread:
-            self._button_thread.stop()
-            try:
-                self._button_flag.release()
-            except:
-                pass
-            self._button_thread.wait()
-            self._button_thread = None
-
     def set_power(self, power=True):
         # print("set_power %s" % power)
 
@@ -214,12 +138,6 @@ class LoRaHandler(SX127x_driver):
 
             # Call base class
             super().set_power(power)
-
-            if power:
-                self._button.irq(handler=self._button_pressed, trigger=Pin.IRQ_FALLING)
-            else:
-                self._button.irq(handler=None, trigger=0)
-                self._display("Ready" if power else "")
 
     def __del__(self):
         self.close()
